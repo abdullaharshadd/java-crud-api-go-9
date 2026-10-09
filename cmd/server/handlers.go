@@ -77,7 +77,7 @@ func (h *userHandler) GetUserNameByName(w http.ResponseWriter, r *http.Request) 
 		}
 		return err
 	}
-	return writeJSON(w, http.StatusOK, user.Name)
+	return writeJSON(w, http.StatusOK, user)
 }
 
 // UpdateUserData handles PUT /update_user_data/{id}, replacing the user's
