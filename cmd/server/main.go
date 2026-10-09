@@ -21,7 +21,7 @@ func main() {
 	}
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && http.ErrServerClosed != err {
 			log.Fatal().Err(err).Msg("server error")
 		}
 	}()
