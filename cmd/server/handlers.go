@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"migrated-app/internal/api"
-	"migrated-app/internal/model"
 	"migrated-app/internal/service"
 )
 
@@ -19,8 +18,8 @@ type userHandler struct {
 }
 
 // GetUserData handles GET /get_user_data, returning every user as JSON.
-func (h *userHandler) GetUserData(w http.ResponseWriter, _ *http.Request) error {
-	users, err := h.svc.FetchUserList(r_context())
+func (h *userHandler) GetUserData(w http.ResponseWriter, r *http.Request) error {
+	users, err := h.svc.FetchUserList(r.Context())
 	if err != nil {
 		return err
 	}
