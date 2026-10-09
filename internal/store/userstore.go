@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 
@@ -20,18 +22,64 @@ type UserStore struct {
 
 // New opens a connection to the MySQL database at dsn and ensures the USER
 // table exists (replacing Hibernate ddl-auto=update).
+//
+// A DSN assembled from multiple candidate hosts (comma-separated) is tried
+// host by host: the first host that answers a ping wins. Each attempt is
+// retried for a short window, because in containerized deployments the
+// database container may still be starting (or its DNS entry may not be
+// registered yet) when the application boots — a single immediate ping then
+// fails with "no such host" and would otherwise crash the whole server.
 func New(dsn string) (*UserStore, error) {
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("store: opening database: %w", err)
+	deadline := time.Now().Add(30 * time.Second)
+	var lastErr error
+	for {
+		for _, candidate := range splitDSNHosts(dsn) {
+			db, err := sql.Open("mysql", candidate)
+			if err != nil {
+				lastErr = fmt.Errorf("store: opening database: %w", err)
+				continue
+			}
+			if err := db.Ping(); err != nil {
+				_ = db.Close()
+				lastErr = fmt.Errorf("store: pinging database: %w", err)
+				continue
+			}
+			if _, err := db.Exec(model.UserTableDDL); err != nil {
+				_ = db.Close()
+				return nil, fmt.Errorf("store: ensuring schema: %w", err)
+			}
+			return &UserStore{db: db}, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, lastErr
+		}
+		time.Sleep(2 * time.Second)
 	}
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("store: pinging database: %w", err)
+}
+
+// splitDSNHosts expands a DSN whose tcp() target is a comma-separated host
+// list into one DSN per host, preserving order. A DSN without a comma in the
+// tcp target (e.g. an explicit DATABASE_URL) yields itself unchanged.
+func splitDSNHosts(dsn string) []string {
+	start := strings.Index(dsn, "tcp(")
+	if start < 0 {
+		return []string{dsn}
 	}
-	if _, err := db.Exec(model.UserTableDDL); err != nil {
-		return nil, fmt.Errorf("store: ensuring schema: %w", err)
+	start += len("tcp(")
+	end := strings.Index(dsn[start:], ")")
+	if end < 0 {
+		return []string{dsn}
 	}
-	return &UserStore{db: db}, nil
+	end += start
+	hosts := strings.Split(dsn[start:end], ",")
+	if len(hosts) < 2 {
+		return []string{dsn}
+	}
+	out := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		out = append(out, dsn[:start]+strings.TrimSpace(h)+dsn[end:])
+	}
+	return out
 }
 
 // Close closes the underlying database connection.
