@@ -33,9 +33,12 @@ func buildRouter() http.Handler {
 	}
 	h := &userHandler{svc: svc}
 
+	r.Post("/save_user_data", api.ErrorHandler(h.SaveUserData).ServeHTTP)
 	r.Get("/get_user_data", api.ErrorHandler(h.GetUserData).ServeHTTP)
 	r.Get("/get_user_data/{id}", api.ErrorHandler(h.GetUserDataById).ServeHTTP)
 	r.Get("/get_user_name/name/{name}", api.ErrorHandler(h.GetUserNameByName).ServeHTTP)
+	r.Put("/update_user_data/{id}", api.ErrorHandler(h.UpdateUserData).ServeHTTP)
+	r.Delete("/delete_user_data/{id}", api.ErrorHandler(h.DeleteUserData).ServeHTTP)
 
 	return r
 }
