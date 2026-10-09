@@ -20,11 +20,14 @@ import (
 // — so the app reaches the real MySQL server whichever naming convention the
 // deployment uses, without hardcoding a single wrong host.
 func MySQLDSNFromEnv() string {
-	if raw := strings.TrimSpace(os.Getenv("DATABASE_URL")); raw != "" {
-		return normalizeDSN(raw)
-	}
-	if raw := strings.TrimSpace(os.Getenv("DB_URL")); raw != "" {
-		return normalizeDSN(raw)
+	for _, key := range []string{"DATABASE_URL", "DB_URL"} {
+		if raw := strings.TrimSpace(os.Getenv(key)); raw != "" {
+			if dsn := normalizeDSN(raw); dsn != "" {
+				return dsn
+			}
+			// Value is not a usable MySQL DSN (e.g. a SQLite file: URL);
+			// fall through to assembling one from DB_* variables.
+		}
 	}
 
 	host := strings.Join(candidateHosts(), ",")
@@ -50,6 +53,10 @@ func candidateHosts() []string {
 
 // normalizeDSN strips known scheme prefixes and query markers that other
 // ecosystems (JDBC) add but the Go MySQL driver does not understand.
+//
+// A nil result means "this value is not a MySQL DSN at all" (e.g. a SQLite
+// file: URL inherited from the source application's config) and callers
+// should fall back to assembling the DSN from the individual DB_* variables.
 func normalizeDSN(raw string) string {
 	for _, prefix := range []string{"jdbc:mysql://", "mysql://"} {
 		if strings.HasPrefix(raw, prefix) {
@@ -57,8 +64,18 @@ func normalizeDSN(raw string) string {
 			break
 		}
 	}
+	// SQLite-style URLs (file:...) and other non-TCP targets cannot be
+	// spoken by the MySQL driver; signal the caller to fall back instead of
+	// passing them through and failing at dial time.
+	if !strings.Contains(raw, "@tcp(") {
+		return ""
+	}
 	if !strings.Contains(raw, "?") {
 		raw += "?parseTime=true"
+		return raw
+	}
+	if !strings.Contains(raw, "parseTime=") {
+		raw += "&parseTime=true"
 	}
 	return raw
 }
