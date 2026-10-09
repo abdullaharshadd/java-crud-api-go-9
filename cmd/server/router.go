@@ -3,19 +3,15 @@ package main
 import (
 	"net/http"
 
+	"migrated-app/internal/api"
+	"migrated-app/internal/service"
+	"migrated-app/internal/store"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 // buildRouter constructs the chi router for the application.
-//
-// No migrated package in this project currently exposes an exported
-// RegisterRoutes(chi.Router) function: internal/api provides error-handling
-// helpers (ErrorHandler, WriteError) but no concrete route handlers, and
-// internal/service/internal/model define no HTTP endpoints. There is
-// therefore nothing to mount beyond the health check, and no placeholder
-// routes are added. When a route-owning package gains a RegisterRoutes
-// function, it should be invoked here.
 func buildRouter() http.Handler {
 	r := chi.NewRouter()
 
@@ -25,6 +21,21 @@ func buildRouter() http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	dsn := store.MySQLDSNFromEnv()
+	st, err := store.New(dsn)
+	if err != nil {
+		panic(err)
+	}
+	svc, err := service.NewUserService(st)
+	if err != nil {
+		panic(err)
+	}
+	h := &userHandler{svc: svc}
+
+	r.Get("/get_user_data", api.ErrorHandler(h.GetUserData).ServeHTTP)
+	r.Get("/get_user_data/{id}", api.ErrorHandler(h.GetUserDataById).ServeHTTP)
+	r.Get("/get_user_name/name/{name}", api.ErrorHandler(h.GetUserNameByName).ServeHTTP)
 
 	return r
 }
